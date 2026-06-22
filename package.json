@@ -1,6 +1,6 @@
 {
   "name": "@bounded-systems/policy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tool-policy engine enforcing subcommand allowlists by tool, state, and role",
   "bounded": {
     "tagline": "Tool-policy engine enforcing subcommand allowlists by tool, state, and role",
