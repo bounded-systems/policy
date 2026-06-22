@@ -7,7 +7,9 @@
  *   - role: planner, executor, reviewer, tester
  */
 
+/** A tool whose subcommands are policy-governed. */
 export type PolicyTool = "git" | "gh" | "wt" | "bd" | "prx" | "slack";
+/** The work-unit phase a policy decision is evaluated in. */
 export type PolicyState = "planning" | "validating" | "merging";
 // GH-2348.3: `keeper` is the git-write / ref-custody role (the actor that owns
 // push + branch ops). It holds the same git-write capability as `executor` at
@@ -17,13 +19,20 @@ export type PolicyState = "planning" | "validating" | "merging";
 // (git). It owns ALL GitHub writes (issues, labels, comments, PRs, merges) so
 // the capability lives in one actor rather than scattered across executor /
 // reviewer / publisher sessions; other actors dispatch gh to it.
+/** The capability role an actor holds; authority is keyed by `tool:state:role`. */
 export type PolicyRole = "planner" | "executor" | "reviewer" | "tester" | "keeper" | "forge";
 
+/** The verdict for one `tool subcommand` under a given state + role. */
 export type PolicyDecision = {
+  /** Whether the subcommand is permitted for this state/role. */
   allowed: boolean;
+  /** The governed tool. */
   tool: PolicyTool;
+  /** The subcommand being checked. */
   subcommand: string;
+  /** The work-unit phase. */
   state: PolicyState;
+  /** The actor's role. */
   role: PolicyRole;
 };
 
@@ -372,6 +381,7 @@ const BLOCKED: Record<PolicyTool, readonly string[]> = {
   ],
 };
 
+/** Whether a `tool subcommand` is hard-blocked outright (denied in every state/role). */
 export function isBlocked(tool: PolicyTool, subcommand: string): boolean {
   return (BLOCKED[tool] ?? []).includes(subcommand);
 }
@@ -403,15 +413,18 @@ const KNOWN_SUBCOMMANDS: Record<PolicyTool, Set<string>> = (() => {
   return acc;
 })();
 
+/** Whether a `tool subcommand` is recognized at all (appears in some allowlist). */
 export function isKnownSubcommand(tool: PolicyTool, subcommand: string): boolean {
   return KNOWN_SUBCOMMANDS[tool]?.has(subcommand) ?? false;
 }
 
+/** Every governed {@link PolicyTool}, in stable order. */
 export const POLICY_TOOLS: readonly PolicyTool[] = ["git", "gh", "wt", "bd", "prx", "slack"];
 
 // prx-g88.1: the canonical role + state vocabularies, exported so generators
 // (e.g. the actor sub-agent codegen) and `findOwningRoles` iterate ONE list
 // rather than re-typing the tuple. Order is stable (used in generated output).
+/** Every {@link PolicyRole}, in stable order (used by codegen + `findOwningRoles`). */
 export const POLICY_ROLES: readonly PolicyRole[] = [
   "planner",
   "executor",
@@ -421,8 +434,10 @@ export const POLICY_ROLES: readonly PolicyRole[] = [
   "forge",
 ];
 
+/** Every {@link PolicyState}, in stable order. */
 export const POLICY_STATES: readonly PolicyState[] = ["planning", "validating", "merging"];
 
+/** Type guard: whether a string is a governed {@link PolicyTool}. */
 export function isPolicyTool(value: string): value is PolicyTool {
   return (POLICY_TOOLS as readonly string[]).includes(value);
 }
@@ -465,6 +480,7 @@ export function isReadOnly(tool: PolicyTool, subcommand: string): boolean {
   return READ_ONLY[tool]?.has(subcommand) ?? false;
 }
 
+/** Evaluate whether a `tool subcommand` is allowed for a given `state` + `role`. */
 export function checkPolicy(
   tool: PolicyTool,
   subcommand: string,
@@ -489,12 +505,15 @@ export function checkPolicy(
 // `reason` is `null` when feasible. Otherwise it names which layer refused so
 // the planner-side preflight can distinguish a hard block from a state/role
 // allowlist miss.
+/** Which layer refused an action shape (`null` when feasible). */
 export type FeasibilityReason = "blocked" | "not-allowlisted-for-role" | "unknown-tool";
 
+/** Whether an action shape is feasible for a role, naming the refusing layer when not. */
 export type FeasibilityResult =
   | { feasible: true; reason: null }
   | { feasible: false; reason: FeasibilityReason };
 
+/** Refusal-symmetry predicate: would this `tool subcommand` be allowed for `role` at `state`? Shared by `prx plan preflight` and the in-session gate. */
 export function isFeasibleForRole(
   tool: PolicyTool,
   subcommand: string,
@@ -520,6 +539,7 @@ export function isFeasibleForRole(
 // (state,role) allowlist. The preflight uses this to demote a refusal that
 // would otherwise read as "executor cannot run X" to a deferred finding
 // pointing at the owning role/profile.
+/** Which roles may run `tool subcommand` at `state` — empty if hard-blocked or absent from every allowlist. */
 export function findOwningRoles(
   tool: PolicyTool,
   subcommand: string,
@@ -538,6 +558,7 @@ export function findOwningRoles(
 // sorted union, across all states, of subcommands a role may run for a tool —
 // the "what can this role touch" view the actor sub-agent docs render. Reads the
 // table directly so the generated allowlists cannot drift from enforcement.
+/** The sorted union, across all states, of subcommands a role may run for a tool. */
 export function allowedSubcommands(tool: PolicyTool, role: PolicyRole): string[] {
   const acc = new Set<string>();
   for (const state of POLICY_STATES) {
@@ -558,6 +579,7 @@ export function blockedSubcommands(tool: PolicyTool): readonly string[] {
 // `.feature`, via `agents/capability_feature.ts`) and the after-the-fact
 // verify gate (`provenance/effect-ownership.ts`). Equivalent to "∃ state:
 // subcommand ∈ findOwningRoles(tool, subcommand, state)", computed once.
+/** The roles that own `tool subcommand` (may run it in some state); empty if hard-blocked. The single owner-of-effect projection. */
 export function ownersOf(tool: PolicyTool, subcommand: string): PolicyRole[] {
   if (isBlocked(tool, subcommand)) return [];
   return POLICY_ROLES.filter((role) => allowedSubcommands(tool, role).includes(subcommand));
@@ -573,7 +595,9 @@ export function ownersOf(tool: PolicyTool, subcommand: string): PolicyRole[] {
 //
 // `enqueue` is injected to keep this module free of the bd / CAS / audit
 // graph. Wire it at the boundary (`src/handoff/from-deny.ts:checkPolicyOrEnqueueDefault`).
+/** A {@link PolicyDecision} plus the enqueue outcome from {@link checkPolicyOrEnqueue}. */
 export type CheckPolicyOrEnqueueResult = PolicyDecision & {
+  /** The handoff id, present when a denied call enqueued a handoff to an owning role. */
   handoffId?: string;
   /** Why no handoff was enqueued — present on `allowed: false` rows that did
    *  not enqueue (no owning role, enqueue disabled, bd unprovisioned, …). */
@@ -585,6 +609,7 @@ export type CheckPolicyOrEnqueueResult = PolicyDecision & {
     | "error";
 };
 
+/** Injected dependencies for {@link checkPolicyOrEnqueue} (keeps this module free of the bd/CAS/audit graph). */
 export type CheckPolicyOrEnqueueDeps = {
   /** Owns the bd+CAS write. See `src/handoff/from-deny.ts`. */
   enqueue?: (input: {
@@ -599,6 +624,7 @@ export type CheckPolicyOrEnqueueDeps = {
   >;
 };
 
+/** Like {@link checkPolicy}, but on a deny that an owning role *could* run, enqueue a structured handoff to that role (via injected `deps.enqueue`). */
 export async function checkPolicyOrEnqueue(
   tool: PolicyTool,
   subcommand: string,
@@ -628,6 +654,7 @@ export async function checkPolicyOrEnqueue(
   return { ...decision, enqueueSkipped: r.reason };
 }
 
+/** Map a work-unit phase string (e.g. `ready_to_merge`, `in_review`) to its {@link PolicyState}. */
 export function phaseToState(phase: string): PolicyState {
   switch (phase) {
     case "ready_to_merge":
@@ -642,6 +669,7 @@ export function phaseToState(phase: string): PolicyState {
   }
 }
 
+/** Render a {@link PolicyDecision} as a one-line `plain` verdict or pretty `json`. */
 export function formatPolicyDecision(decision: PolicyDecision, format: "plain" | "json"): string {
   if (format === "json") {
     return JSON.stringify(decision, null, 2);
