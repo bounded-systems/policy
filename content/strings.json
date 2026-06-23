@@ -5,6 +5,10 @@
   },
   "description": {
     "type": "meta",
-    "value": "Tool-policy engine enforcing subcommand allowlists by tool, state, and role"
+    "value": "A tool-policy engine: which tool subcommands are allowed, given the current state and the acting role.  The authority model is a table.  A request names a tool (e."
+  },
+  "keywords": {
+    "type": "body",
+    "value": "POLICY · ALLOWLIST · AUTHORIZATION · RBAC · TOOL-POLICY"
   }
 }
