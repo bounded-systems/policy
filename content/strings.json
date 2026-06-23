@@ -1,0 +1,10 @@
+{
+  "name": {
+    "type": "name",
+    "value": "Policy"
+  },
+  "description": {
+    "type": "meta",
+    "value": "Tool-policy engine enforcing subcommand allowlists by tool, state, and role"
+  }
+}
